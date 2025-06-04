@@ -1,0 +1,243 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Star, Clock, FileText } from 'l            {/* Tags */}
+            {(note as any).tags && (note as any).tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {(note as any).tags.slice(0, 2).map((tag: any) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center px-2 py-0.5 rounded text-xs"
+                    style={{ backgroundColor: tag.color + '20', color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {(note as any).tags.length > 2 && (
+                  <span className="text-xs text-gray-400">+{(note as any).tags.length - 2}</span>
+                )}
+              </div>
+            )}rt { searchService } from '@/services/search-service'
+import type { Note } from '@/types'
+
+interface FavoritesSectionProps {
+  onNoteSelect: (noteId: string) => void
+  selectedNoteId?: string
+}
+
+export function FavoritesSection({ onNoteSelect, selectedNoteId }: FavoritesSectionProps) {
+  const [favorites, setFavorites] = useState<Note[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    loadFavorites()
+  }, [])
+
+  const loadFavorites = async () => {
+    setLoading(true)
+    try {
+      const notes = await searchService.getFavoriteNotes()
+      setFavorites(notes)
+    } catch (error) {
+      console.error('Error loading favorites:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleFavorite = async (noteId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await searchService.toggleFavorite(noteId)
+      // Remove from favorites list since it's no longer a favorite
+      setFavorites(prev => prev.filter(note => note.id !== noteId))
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString()
+  }
+
+  if (loading) {
+    return (
+      <div className="p-4 text-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+        <p className="text-sm text-gray-500 mt-2">Loading favorites...</p>
+      </div>
+    )
+  }
+
+  if (favorites.length === 0) {
+    return (
+      <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+        <Star className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <p className="text-lg font-medium">No favorite notes</p>
+        <p className="text-sm">Star notes to add them to your favorites</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {favorites.map((note) => (
+        <div
+          key={note.id}
+          onClick={() => onNoteSelect(note.id)}
+          className={`group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+            selectedNoteId === note.id
+              ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+              : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                {note.title}
+              </h3>
+              <Star 
+                className="h-4 w-4 text-yellow-500 fill-current flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                onClick={(e) => handleToggleFavorite(note.id, e)}
+              />
+            </div>
+            
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <span className="truncate">{note.path}</span>
+              <span>•</span>
+              <span>{formatDate(note.updated_at)}</span>
+            </div>
+
+            {/* TODO: Re-enable tags when Note type includes tags property */}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface RecentFilesSectionProps {
+  onNoteSelect: (noteId: string) => void
+  selectedNoteId?: string
+  limit?: number
+}
+
+export function RecentFilesSection({ onNoteSelect, selectedNoteId, limit = 10 }: RecentFilesSectionProps) {
+  const [recentNotes, setRecentNotes] = useState<Note[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    loadRecentNotes()
+  }, [limit])
+
+  const loadRecentNotes = async () => {
+    setLoading(true)
+    try {
+      const notes = await searchService.getRecentNotes(limit)
+      setRecentNotes(notes)
+    } catch (error) {
+      console.error('Error loading recent notes:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleToggleFavorite = async (noteId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      const newStatus = await searchService.toggleFavorite(noteId)
+      // Update the note in the list
+      setRecentNotes(prev => 
+        prev.map(note => 
+          note.id === noteId 
+            ? { ...note, is_favorite: newStatus }
+            : note
+        )
+      )
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+    }
+  }
+
+  const formatRelativeTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / (1000 * 60))
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString()
+  }
+
+  if (loading) {
+    return (
+      <div className="p-4 text-center">
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto"></div>
+        <p className="text-sm text-gray-500 mt-2">Loading recent files...</p>
+      </div>
+    )
+  }
+
+  if (recentNotes.length === 0) {
+    return (
+      <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+        <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <p className="text-lg font-medium">No recent notes</p>
+        <p className="text-sm">Open some notes to see them here</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {recentNotes.map((note) => (
+        <div
+          key={note.id}
+          onClick={() => onNoteSelect(note.id)}
+          className={`group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+            selectedNoteId === note.id
+              ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800'
+              : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                {note.title}
+              </h3>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Star 
+                  className={`h-4 w-4 flex-shrink-0 cursor-pointer transition-colors ${
+                    note.is_favorite 
+                      ? 'text-yellow-500 fill-current' 
+                      : 'text-gray-400 hover:text-yellow-500'
+                  }`}
+                  onClick={(e) => handleToggleFavorite(note.id, e)}
+                />
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              <Clock className="h-3 w-3" />
+              <span>{note.last_accessed_at ? formatRelativeTime(note.last_accessed_at) : 'Never'}</span>
+              <span>•</span>
+              <span className="truncate">{note.path}</span>
+            </div>
+
+            {/* TODO: Re-enable tags when Note type includes tags property */}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}

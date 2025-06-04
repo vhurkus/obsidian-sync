@@ -41,7 +41,23 @@ export interface SearchState {
       start: Date
       end: Date
     }
+    favorites?: boolean
+    recent?: boolean
   }
+}
+
+export interface SearchResult {
+  note: Note
+  highlights: string[]
+  score: number
+}
+
+export interface QuickSwitcherState {
+  isOpen: boolean
+  query: string
+  results: SearchResult[]
+  selectedIndex: number
+  loading: boolean
 }
 
 export type Theme = 'light' | 'dark' | 'system'

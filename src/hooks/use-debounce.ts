@@ -1,41 +1,23 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useState } from 'react'
 
 /**
- * useDebounce hook - PRD requirement for 1 second debounce on auto-save
- * @param callback - Function to execute after delay
- * @param delay - Delay in milliseconds 
- * @param deps - Dependencies array
+ * useDebounce hook for debouncing values
+ * @param value - Value to debounce
+ * @param delay - Delay in milliseconds
+ * @returns Debounced value
  */
-export function useDebounce(
-  callback: () => void,
-  delay: number,
-  deps: React.DependencyList
-) {
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+export function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value)
+
   useEffect(() => {
-    // Clear existing timeout
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
+    const timer = setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
 
-    // Set new timeout
-    timeoutRef.current = setTimeout(callback, delay)
-
-    // Cleanup function
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
+      clearTimeout(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callback, delay, ...deps])
+  }, [value, delay])
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-    }
-  }, [])
+  return debouncedValue
 }

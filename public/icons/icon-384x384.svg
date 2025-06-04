@@ -1,0 +1,14 @@
+<svg width="384" height="384" viewBox="0 0 384 384" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="384" height="384" rx="57.599999999999994" fill="#0f172a"/>
+  
+  <!-- Note lines -->
+  <rect x="96.0" y="115.19999999999999" width="192.0" height="23.04" fill="white" opacity="0.9"/>
+  <rect x="96.0" y="163.2" width="144.0" height="23.04" fill="white" opacity="0.7"/>
+  <rect x="96.0" y="211.2" width="192.0" height="23.04" fill="white" opacity="0.9"/>
+  <rect x="96.0" y="259.2" width="115.2" height="23.04" fill="white" opacity="0.7"/>
+  
+  <!-- Status dots -->
+  <circle cx="299.52" cy="139.2" r="11.52" fill="#3b82f6"/>
+  <circle cx="299.52" cy="187.2" r="11.52" fill="#10b981"/>
+  <circle cx="299.52" cy="235.2" r="11.52" fill="#f59e0b"/>
+</svg>

@@ -7,16 +7,30 @@ import { Button } from '@/components/ui/button'
 import { NotesList } from '@/components/features/notes-list'
 import { MonacoEditor } from '@/components/features/monaco-editor'
 import { MarkdownPreview } from '@/components/features/markdown-preview'
-import { FileText, Settings, LogOut, Menu, X, Eye, Edit, Split } from 'lucide-react'
+import { QuickSwitcher } from '@/components/features/quick-switcher'
+import { FavoritesSection, RecentFilesSection } from '@/components/features/favorites-and-recent'
+import { OfflineStatusIndicator, PWAInstallPrompt, OfflineBanner } from '@/components/features/offline-status'
+import { SettingsPage } from '@/components/features/settings-page'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { useKeyboardShortcuts, createGlobalShortcuts } from '@/hooks/use-keyboard-shortcuts'
+import { useSettingsStore } from '@/stores/settings'
+import { FileText, Settings, LogOut, Menu, X, Eye, Edit, Split, Smartphone, Search, Star, Clock } from 'lucide-react'
 import { NoteWithTags } from '@/types'
+import { SyncStatus } from '@/components/features/sync-status'
+import { DeviceManager } from '@/components/features/device-manager'
 
 export default function DashboardPage() {
   const { user, signOut, initialize } = useAuthStore()
-  const { currentNote, setCurrentNote, createNote } = useNoteStore()
+  const { currentNote, setCurrentNote, createNote, toggleFavorite } = useNoteStore()
+  const { toggleTheme } = useSettingsStore()
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split')
   const [newNoteTitle, setNewNoteTitle] = useState('')
+  const [isDeviceManagerOpen, setIsDeviceManagerOpen] = useState(false)
+  const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [sidebarTab, setSidebarTab] = useState<'notes' | 'favorites' | 'recent'>('notes')
 
   useEffect(() => {
     initialize()
@@ -33,6 +47,14 @@ export default function DashboardPage() {
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false)
     }
+  }
+
+  const handleNoteSelectById = (noteId: string) => {
+    // This will be called from QuickSwitcher
+    // We'll fetch the note from the store or API here
+    console.log('Selecting note by ID:', noteId)
+    // For now, close the quick switcher
+    setIsQuickSwitcherOpen(false)
   }
 
   const handleNewNote = () => {
@@ -72,8 +94,35 @@ export default function DashboardPage() {
     setCurrentNote(null)
   }
 
+  const handleToggleFavorite = async (noteId: string) => {
+    try {
+      await toggleFavorite(noteId)
+    } catch (error) {
+      console.error('Error toggling favorite:', error)
+    }
+  }
+
+  // Setup keyboard shortcuts
+  useKeyboardShortcuts({
+    shortcuts: createGlobalShortcuts({
+      onQuickSwitcher: () => setIsQuickSwitcherOpen(true),
+      onNewNote: handleNewNote,
+      onToggleSidebar: () => setIsSidebarOpen(prev => !prev),
+      onSettings: () => setIsSettingsOpen(true),
+      onToggleTheme: toggleTheme,
+      onCloseModal: () => {
+        setIsQuickSwitcherOpen(false)
+        setIsSettingsOpen(false)
+        setIsDeviceManagerOpen(false)
+      }
+    })
+  })
+
   return (
     <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+      {/* Offline Banner */}
+      <OfflineBanner />
+      
       {/* Header */}
       <header className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
         <div className="flex h-16 items-center justify-between px-6">
@@ -81,7 +130,7 @@ export default function DashboardPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden"
+              className="lg:hidden"
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             >
               {isSidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
@@ -99,9 +148,45 @@ export default function DashboardPage() {
           </div>
           
           <div className="flex items-center space-x-2">
-            <Button variant="ghost" size="icon">
+            {/* Quick Switcher Button */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setIsQuickSwitcherOpen(true)}
+              title="Hızlı Arama (Ctrl+K)"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+            
+            {/* Sync Status */}
+            <SyncStatus />
+            
+            {/* Offline Status */}
+            <OfflineStatusIndicator />
+            
+            {/* Device Management */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setIsDeviceManagerOpen(true)}
+              title="Cihaz Yönetimi"
+            >
+              <Smartphone className="h-4 w-4" />
+            </Button>
+            
+            {/* Theme Toggle */}
+            <ThemeToggle size="md" />
+            
+            {/* Settings */}
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={() => setIsSettingsOpen(true)}
+              title="Ayarlar (Ctrl+,)"
+            >
               <Settings className="h-4 w-4" />
             </Button>
+            
             <Button variant="ghost" size="icon" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />
             </Button>
@@ -114,22 +199,79 @@ export default function DashboardPage() {
         {/* Sidebar - Notes List */}
         <div className={`
           flex-shrink-0 w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950
-          ${isSidebarOpen ? 'block' : 'hidden md:block'}
-          md:relative absolute inset-y-0 left-0 z-50 md:z-auto
+          ${isSidebarOpen ? 'block' : 'hidden lg:block'}
+          lg:relative absolute inset-y-0 left-0 z-50 lg:z-auto
+          transition-transform duration-300 ease-in-out
         `}>
-          <div className="h-full p-4">
-            <NotesList
-              onNoteSelect={handleNoteSelect}
-              onNewNote={handleNewNote}
-              selectedNoteId={currentNote?.id}
-            />
+          <div className="h-full flex flex-col">
+            {/* Sidebar Tabs */}
+            <div className="flex border-b border-slate-200 dark:border-slate-800">
+              <button
+                onClick={() => setSidebarTab('notes')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidebarTab === 'notes'
+                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <FileText className="inline h-4 w-4 mr-1" />
+                All Notes
+              </button>
+              <button
+                onClick={() => setSidebarTab('favorites')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidebarTab === 'favorites'
+                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <Star className="inline h-4 w-4 mr-1" />
+                Favorites
+              </button>
+              <button
+                onClick={() => setSidebarTab('recent')}
+                className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                  sidebarTab === 'recent'
+                    ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <Clock className="inline h-4 w-4 mr-1" />
+                Recent
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-hidden">
+              <div className="h-full p-4">
+                {sidebarTab === 'notes' && (
+                  <NotesList
+                    onNoteSelect={handleNoteSelect}
+                    onNewNote={handleNewNote}
+                    selectedNoteId={currentNote?.id}
+                  />
+                )}
+                {sidebarTab === 'favorites' && (
+                  <FavoritesSection
+                    onNoteSelect={handleNoteSelectById}
+                    selectedNoteId={currentNote?.id}
+                  />
+                )}
+                {sidebarTab === 'recent' && (
+                  <RecentFilesSection
+                    onNoteSelect={handleNoteSelectById}
+                    selectedNoteId={currentNote?.id}
+                  />
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Mobile sidebar backdrop */}
         {isSidebarOpen && (
           <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
             onClick={() => setIsSidebarOpen(false)}
           />
         )}        {/* Main Editor Area */}
@@ -177,18 +319,28 @@ export default function DashboardPage() {
               {/* View mode controls */}
               <div className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 p-3 bg-white dark:bg-slate-950">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">
-                    {currentNote.title}
-                  </h2>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 truncate">
+                      {currentNote.title}
+                    </h2>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleFavorite(currentNote.id)}
+                      className={`h-8 ${currentNote.is_favorite ? 'text-yellow-500' : 'text-gray-400'}`}
+                    >
+                      <Star className={`h-4 w-4 ${currentNote.is_favorite ? 'fill-current' : ''}`} />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-1 flex-wrap">
                     <Button
                       variant={viewMode === 'edit' ? 'default' : 'ghost'}
                       size="sm"
                       onClick={() => setViewMode('edit')}
                       className="h-8"
                     >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Düzenle
+                      <Edit className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Düzenle</span>
                     </Button>
                     <Button
                       variant={viewMode === 'preview' ? 'default' : 'ghost'}
@@ -196,14 +348,14 @@ export default function DashboardPage() {
                       onClick={() => setViewMode('preview')}
                       className="h-8"
                     >
-                      <Eye className="h-4 w-4 mr-1" />
-                      Önizleme
+                      <Eye className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Önizleme</span>
                     </Button>
                     <Button
                       variant={viewMode === 'split' ? 'default' : 'ghost'}
                       size="sm"
                       onClick={() => setViewMode('split')}
-                      className="h-8"
+                      className="h-8 hidden lg:flex"
                     >
                       <Split className="h-4 w-4 mr-1" />
                       Split
@@ -230,17 +382,17 @@ export default function DashboardPage() {
                 )}
                 
                 {viewMode === 'split' && (
-                  <>
+                  <div className="flex flex-col lg:flex-row w-full">
                     <MonacoEditor
                       note={currentNote}
                       onSave={handleNoteSave}
-                      className="w-1/2 border-r border-slate-200 dark:border-slate-800"
+                      className="w-full lg:w-1/2 lg:border-r border-slate-200 dark:border-slate-800 flex-1"
                     />
                     <MarkdownPreview
                       note={currentNote}
-                      className="w-1/2"
+                      className="w-full lg:w-1/2 flex-1"
                     />
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -276,6 +428,28 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Device Manager Modal */}
+      <DeviceManager 
+        isOpen={isDeviceManagerOpen}
+        onClose={() => setIsDeviceManagerOpen(false)}
+      />
+
+      {/* Quick Switcher Modal */}
+      <QuickSwitcher
+        isOpen={isQuickSwitcherOpen}
+        onClose={() => setIsQuickSwitcherOpen(false)}
+        onNoteSelect={handleNoteSelectById}
+      />
+
+      {/* Settings Modal */}
+      <SettingsPage
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+      />
+
+      {/* PWA Install Prompt */}
+      <PWAInstallPrompt />
     </div>
   )
 }

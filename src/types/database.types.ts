@@ -23,6 +23,8 @@ export interface Database {
           deleted_at: string | null
           device_id: string | null
           version: number
+          is_favorite: boolean
+          last_accessed_at: string | null
         }
         Insert: {
           id?: string
@@ -37,6 +39,8 @@ export interface Database {
           deleted_at?: string | null
           device_id?: string | null
           version?: number
+          is_favorite?: boolean
+          last_accessed_at?: string | null
         }
         Update: {
           id?: string
@@ -51,6 +55,8 @@ export interface Database {
           deleted_at?: string | null
           device_id?: string | null
           version?: number
+          is_favorite?: boolean
+          last_accessed_at?: string | null
         }
       }
       tags: {
@@ -145,6 +151,35 @@ export interface Database {
           updated_at?: string
         }
       }
+      user_sessions: {
+        Row: {
+          id: string
+          user_id: string
+          device_id: string
+          device_name: string | null
+          is_active: boolean
+          last_seen_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          device_id: string
+          device_name?: string | null
+          is_active?: boolean
+          last_seen_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          device_id?: string
+          device_name?: string | null
+          is_active?: boolean
+          last_seen_at?: string
+          created_at?: string
+        }
+      }
     }
     Views: {
       [_ in never]: never
@@ -173,3 +208,4 @@ export type TagUpdate = Database['public']['Tables']['tags']['Update']
 export type NoteTag = Database['public']['Tables']['note_tags']['Row']
 export type SyncQueueItem = Database['public']['Tables']['sync_queue']['Row']
 export type SearchIndex = Database['public']['Tables']['search_index']['Row']
+export type UserSession = Database['public']['Tables']['user_sessions']['Row']

@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Editor, Monaco } from '@monaco-editor/react'
-import { useNoteStore } from '@/stores/note'
+import { useSyncStatus } from '@/hooks/use-sync-status'
+import { useRealtime } from '@/hooks/use-realtime'
+import { useSettingsStore } from '@/stores/settings'
+import { syncService } from '@/services/sync-service'
 import { Button } from '@/components/ui/button'
 import { NoteWithTags } from '@/types'
 import { 
@@ -14,7 +17,10 @@ import {
   Edit,
   Save,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Wifi,
+  WifiOff,
+  AlertTriangle
 } from 'lucide-react'
 
 interface MonacoEditorProps {
@@ -32,37 +38,60 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
   onPreviewToggle,
   className = ''
 }) => {
-  const { updateNote } = useNoteStore()
+  const { conflicts, isSyncing } = useSyncStatus()
+  const { isConnected } = useRealtime()
+  const { theme, editorFontSize, spellCheck, autoSave, autoSaveInterval } = useSettingsStore()
   const [content, setContent] = useState(note?.content || '')
   const [isSaving, setIsSaving] = useState(false)
   const [lastSaved, setLastSaved] = useState<Date | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error' | 'conflict'>('idle')
   const editorRef = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Check for conflicts for this note
+  const noteConflict = note ? conflicts.find(c => c.noteId === note.id) : null
 
   useEffect(() => {
     setContent(note?.content || '')
   }, [note])
 
-  // Auto-save functionality with 1 second debounce (PRD requirement)
+  // Auto-save functionality with sync service
   const handleSave = async () => {
     if (!note || content === note.content) return
 
     setIsSaving(true)
+    setSyncStatus('syncing')
+
     try {
-      const updatedNote = { ...note, content }
-      await updateNote(note.id, { content })
-      setLastSaved(new Date())
-      onSave?.(updatedNote)
+      // Use sync service for conflict-aware saving
+      const result = await syncService.saveNote({
+        ...note,
+        content,
+        updated_at: new Date().toISOString()
+      })
+
+      if (result.success && result.resolvedNote) {
+        setLastSaved(new Date())
+        setSyncStatus('synced')
+        onSave?.(result.resolvedNote)
+      } else if (result.conflict) {
+        setSyncStatus('conflict')
+        console.log('Conflict detected. Please resolve manually.')
+      } else {
+        setSyncStatus('error')
+        console.log('Failed to save note:', result.error)
+      }
     } catch (error) {
-      console.error('Failed to save note:', error)
+      console.log('Failed to save note:', error)
+      setSyncStatus('error')
     } finally {
       setIsSaving(false)
     }
   }
 
   useEffect(() => {
-    if (!note || content === note.content) return
+    if (!note || content === note.content || !autoSave) return
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
@@ -70,14 +99,14 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
     saveTimeoutRef.current = setTimeout(() => {
       handleSave()
-    }, 1000) // 1 second debounce as per PRD
+    }, autoSaveInterval) // Use settings store interval
 
     return () => {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
       }
     }
-  }, [content, note]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [content, note, autoSave, autoSaveInterval]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditorDidMount = (editor: any, monaco: Monaco) => { // eslint-disable-line @typescript-eslint/no-explicit-any
     editorRef.current = editor
@@ -224,77 +253,109 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
 
   return (
     <div className={`flex flex-col h-full ${isFullscreen ? 'fixed inset-0 z-50 bg-gray-900' : ''} ${className}`}>
-      {/* Toolbar */}
-      <div className="border-b border-gray-700 bg-gray-800 p-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          {/* Format buttons */}
-          <div className="flex items-center space-x-1 border-r border-gray-600 pr-2 mr-2">
-            {formatButtons.map((button, index) => (
+      {/* Responsive Toolbar */}
+      <div className="border-b border-gray-700 bg-gray-800 p-1.5 sm:p-2 flex items-center justify-between">
+        <div className="flex items-center space-x-1 sm:space-x-2 overflow-x-auto">
+          {/* Format buttons - show only essential ones on mobile */}
+          <div className="flex items-center space-x-0.5 sm:space-x-1 border-r border-gray-600 pr-1 sm:pr-2 mr-1 sm:mr-2">
+            {formatButtons.slice(0, 2).map((button, index) => (
               <Button
                 key={index}
                 variant="ghost"
                 size="sm"
                 onClick={button.action}
                 title={button.tooltip}
-                className="text-gray-300 hover:text-white hover:bg-gray-700"
+                className="text-gray-300 hover:text-white hover:bg-gray-700 h-7 w-7 sm:h-8 sm:w-8 p-0"
               >
-                <button.icon className="w-4 h-4" />
+                <button.icon className="w-3 h-3 sm:w-4 sm:h-4" />
               </Button>
             ))}
+            {/* Additional buttons hidden on small screens */}
+            <div className="hidden sm:flex items-center space-x-1">
+              {formatButtons.slice(2).map((button, index) => (
+                <Button
+                  key={index + 2}
+                  variant="ghost"
+                  size="sm"
+                  onClick={button.action}
+                  title={button.tooltip}
+                  className="text-gray-300 hover:text-white hover:bg-gray-700 h-8 w-8 p-0"
+                >
+                  <button.icon className="w-4 h-4" />
+                </Button>
+              ))}
+            </div>
           </div>
 
           {/* View toggle */}
-          <div className="flex items-center space-x-1">
+          {onPreviewToggle && (
             <Button
               variant="ghost"
               size="sm"
               onClick={onPreviewToggle}
               title={isPreviewMode ? "Edit Mode" : "Preview Mode"}
-              className="text-gray-300 hover:text-white hover:bg-gray-700"
+              className="text-gray-300 hover:text-white hover:bg-gray-700 h-7 w-7 sm:h-8 sm:w-8 p-0"
             >
-              {isPreviewMode ? <Edit className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {isPreviewMode ? <Edit className="w-3 h-3 sm:w-4 sm:h-4" /> : <Eye className="w-3 h-3 sm:w-4 sm:h-4" />}
             </Button>
-          </div>
+          )}
         </div>
 
-        <div className="flex items-center space-x-2">
-          {/* Save status */}
-          <div className="flex items-center space-x-2 text-sm text-gray-400">
-            {isSaving ? (
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
-                <span>Saving...</span>
-              </div>
+        {/* Status and action buttons */}
+        <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+          {/* Connection status */}
+          <div className="flex items-center space-x-1">
+            {!isConnected ? (
+              <WifiOff className="w-3 h-3 text-red-400" />
+            ) : noteConflict ? (
+              <AlertTriangle className="w-3 h-3 text-orange-400" />
+            ) : isSaving || isSyncing ? (
+              <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></div>
             ) : lastSaved ? (
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>Saved {lastSaved.toLocaleTimeString()}</span>
-              </div>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            ) : (
+              <Wifi className="w-3 h-3 text-green-400" />
+            )}
+          </div>
+
+          {/* Save status text - hidden on mobile */}
+          <div className="hidden sm:flex items-center text-xs text-gray-400">
+            {isSaving || isSyncing ? (
+              <span>Syncing...</span>
+            ) : syncStatus === 'conflict' ? (
+              <span className="text-orange-400">Conflict</span>
+            ) : syncStatus === 'error' ? (
+              <span className="text-red-400">Error</span>
+            ) : lastSaved ? (
+              <span>Saved {lastSaved.toLocaleTimeString()}</span>
             ) : null}
           </div>
 
-          {/* Manual save button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleSave}
-            disabled={isSaving || content === note?.content}
-            title="Save (Ctrl+S)"
-            className="text-gray-300 hover:text-white hover:bg-gray-700 disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-          </Button>
+          {/* Action buttons */}
+          <div className="flex items-center space-x-1">
+            {/* Manual save button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSave}
+              disabled={isSaving || content === note?.content}
+              title="Save (Ctrl+S)"
+              className="text-gray-300 hover:text-white hover:bg-gray-700 disabled:opacity-50 h-7 w-7 sm:h-8 sm:w-8 p-0"
+            >
+              <Save className="w-3 h-3 sm:w-4 sm:h-4" />
+            </Button>
 
-          {/* Fullscreen toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-            className="text-gray-300 hover:text-white hover:bg-gray-700"
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </Button>
+            {/* Fullscreen toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+              className="text-gray-300 hover:text-white hover:bg-gray-700 h-7 w-7 sm:h-8 sm:w-8 p-0"
+            >
+              {isFullscreen ? <Minimize2 className="w-3 h-3 sm:w-4 sm:h-4" /> : <Maximize2 className="w-3 h-3 sm:w-4 sm:h-4" />}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -306,9 +367,9 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
           value={content}
           onChange={(value) => setContent(value || '')}
           onMount={handleEditorDidMount}
-          theme="obsidian-dark"
+          theme={theme === 'dark' ? 'obsidian-dark' : 'vs'}
           options={{
-            fontSize: 14,
+            fontSize: editorFontSize,
             fontFamily: '"Fira Code", "Consolas", "Monaco", monospace',
             lineNumbers: 'on',
             wordWrap: 'on',
@@ -333,7 +394,22 @@ export const MonacoEditor: React.FC<MonacoEditorProps> = ({
             suggestOnTriggerCharacters: false,
             acceptSuggestionOnEnter: 'off',
             tabCompletion: 'off',
-            wordBasedSuggestions: 'off'
+            wordBasedSuggestions: 'off',
+            // Mobile-specific options
+            scrollbar: {
+              vertical: 'auto',
+              horizontal: 'auto',
+              useShadows: false,
+              verticalHasArrows: false,
+              horizontalHasArrows: false,
+              verticalScrollbarSize: 10,
+              horizontalScrollbarSize: 10
+            },
+            // Add spell check if enabled
+            ...(spellCheck && {
+              'editor.wordWrap': 'on',
+              'editor.wordWrapColumn': 80
+            })
           }}
         />
       </div>

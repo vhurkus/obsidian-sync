@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import { supabase } from '@/lib/supabase/client'
+import { mockAuthService } from '@/services/mock-service'
 import { User, AuthState } from '@/types'
 import type { Session } from '@supabase/supabase-js'
+
+const isMockMode = typeof window !== 'undefined' && process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
 
 interface AuthStore extends AuthState {
   // Actions
@@ -29,15 +32,18 @@ export const useAuthStore = create<AuthStore>()(
       // Actions
       signIn: async (email: string, password: string) => {
         set({ loading: true, error: null })
-        
-        // Check if Supabase is configured
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-          const errorMsg = 'Supabase yapılandırılmamış. Lütfen .env.local dosyasını oluşturun ve Supabase bilgilerinizi ekleyin.'
-          set({ error: errorMsg, loading: false })
-          return { error: errorMsg }
-        }
-        
+
         try {
+          if (isMockMode) {
+            const { data, error } = await mockAuthService.signIn(email, password)
+            if (error) {
+              set({ error: String(error), loading: false })
+              return { error: String(error) }
+            }
+            set({ user: data.user, loading: false })
+            return { error: null }
+          }
+
           const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password,
@@ -48,16 +54,10 @@ export const useAuthStore = create<AuthStore>()(
             return { error: error.message }
           }
 
-          set({
-            user: data.user as User, 
-            session: data.session,
-            loading: false,
-            error: null 
-          })
-          
+          set({ user: data.user as User, session: data.session, loading: false })
           return { error: null }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu'
+          const errorMessage = 'An unexpected error occurred'
           set({ error: errorMessage, loading: false })
           return { error: errorMessage }
         }
@@ -65,15 +65,19 @@ export const useAuthStore = create<AuthStore>()(
 
       signUp: async (email: string, password: string) => {
         set({ loading: true, error: null })
-        
-        // Check if Supabase is configured
-        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-          const errorMsg = 'Supabase yapılandırılmamış. Lütfen .env.local dosyasını oluşturun ve Supabase bilgilerinizi ekleyin.'
-          set({ error: errorMsg, loading: false })
-          return { error: errorMsg }
-        }
-          try {
-          const { error } = await supabase.auth.signUp({
+
+        try {
+          if (isMockMode) {
+            const { data, error } = await mockAuthService.signUp(email, password)
+            if (error) {
+              set({ error: String(error), loading: false })
+              return { error: String(error) }
+            }
+            set({ user: data.user, loading: false })
+            return { error: null }
+          }
+
+          const { data, error } = await supabase.auth.signUp({
             email,
             password,
           })
@@ -83,11 +87,19 @@ export const useAuthStore = create<AuthStore>()(
             return { error: error.message }
           }
 
-          // Don't set user immediately for signup - they need to confirm email
-          set({ loading: false, error: null })
+          // If user needs to confirm email
+          if (data.user && !data.session) {
+            set({ 
+              error: 'Please check your email to confirm your account',
+              loading: false 
+            })
+            return { error: null }
+          }
+
+          set({ user: data.user as User, session: data.session, loading: false })
           return { error: null }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu'
+          const errorMessage = 'An unexpected error occurred'
           set({ error: errorMessage, loading: false })
           return { error: errorMessage }
         }
@@ -97,7 +109,9 @@ export const useAuthStore = create<AuthStore>()(
         set({ loading: true })
         
         try {
-          if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+          if (isMockMode) {
+            await mockAuthService.signOut()
+          } else {
             await supabase.auth.signOut()
           }
           set({ user: null, session: null, loading: false, error: null })
@@ -107,8 +121,10 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      resetPassword: async (email: string) => {        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-          return { error: 'Supabase yapılandırılmamış' }
+      resetPassword: async (email: string) => {
+        if (isMockMode) {
+          // Mock password reset - just return success
+          return { error: null }
         }
 
         try {
@@ -122,16 +138,20 @@ export const useAuthStore = create<AuthStore>()(
 
           return { error: null }
         } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Bir hata oluştu'
+          const errorMessage = error instanceof Error ? error.message : 'An error occurred'
           return { error: errorMessage }
         }
       },
 
       initialize: async () => {
         try {
-          if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-            console.warn('⚠️  Supabase yapılandırılmamış')
-            set({ loading: false })
+          if (isMockMode) {
+            const { data } = await mockAuthService.getCurrentUser()
+            set({
+              user: data.user,
+              session: null, // Mock mode doesn't use sessions
+              loading: false,
+            })
             return
           }
 

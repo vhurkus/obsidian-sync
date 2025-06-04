@@ -85,6 +85,25 @@ CREATE POLICY "Users can manage own sync_queue" ON sync_queue
 CREATE POLICY "Users can manage own search_index" ON search_index
   FOR ALL USING (auth.uid() = user_id);
 
+-- Create user_sessions table for device management
+CREATE TABLE user_sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  device_id TEXT NOT NULL,
+  device_name TEXT,
+  is_active BOOLEAN DEFAULT true,
+  last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, device_id)
+);
+
+-- Enable RLS for user_sessions
+ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policy for user_sessions
+CREATE POLICY "Users can manage own sessions" ON user_sessions
+  FOR ALL USING (auth.uid() = user_id);
+
 -- Function to update search index
 CREATE OR REPLACE FUNCTION update_search_index()
 RETURNS TRIGGER AS $$
@@ -124,3 +143,54 @@ CREATE TRIGGER update_notes_updated_at
     BEFORE UPDATE ON notes
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- Function to update last_seen_at
+CREATE OR REPLACE FUNCTION update_session_activity()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_seen_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for session activity
+CREATE TRIGGER update_session_activity_trigger
+    BEFORE UPDATE ON user_sessions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_session_activity();
+
+-- Function to handle note version conflicts
+CREATE OR REPLACE FUNCTION resolve_note_conflict(
+  note_id_param UUID,
+  client_version INTEGER,
+  new_content TEXT,
+  new_title TEXT
+)
+RETURNS TABLE(
+  success BOOLEAN,
+  current_version INTEGER,
+  conflict BOOLEAN
+) AS $$
+DECLARE
+  current_ver INTEGER;
+BEGIN
+  -- Get current version
+  SELECT version INTO current_ver FROM notes WHERE id = note_id_param;
+  
+  -- Check for conflict
+  IF current_ver > client_version THEN
+    -- Conflict detected
+    RETURN QUERY SELECT FALSE, current_ver, TRUE;
+  ELSE
+    -- No conflict, update
+    UPDATE notes 
+    SET content = new_content, 
+        title = new_title, 
+        version = version + 1,
+        updated_at = NOW()
+    WHERE id = note_id_param;
+    
+    RETURN QUERY SELECT TRUE, current_ver + 1, FALSE;
+  END IF;
+END;
+$$ LANGUAGE plpgsql;

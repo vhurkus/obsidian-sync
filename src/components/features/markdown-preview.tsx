@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
+import { useSettingsStore } from '@/stores/settings'
 import { NoteWithTags } from '@/types'
 import 'highlight.js/styles/github-dark.css'
 
@@ -18,6 +19,7 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   content,
   className = ''
 }) => {
+  const { previewFontSize } = useSettingsStore()
   const [markdownContent, setMarkdownContent] = useState('')
 
   useEffect(() => {
@@ -37,7 +39,8 @@ export const MarkdownPreview: React.FC<MarkdownPreviewProps> = ({
   }
 
   return (
-    <div className={`h-full overflow-auto bg-[#0F1419] ${className}`}>      <div className="max-w-none p-6">
+    <div className={`h-full overflow-auto bg-[#0F1419] ${className}`} style={{ fontSize: `${previewFontSize}px` }}>
+      <div className="max-w-none p-6">
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight]}

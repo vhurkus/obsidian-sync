@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useNoteStore } from '@/stores/note'
-import { useDebounce } from '@/hooks/use-debounce'
-import { Save, FileText, Eye, Edit3 } from 'lucide-react'
+import { useSyncStatus } from '@/hooks/use-sync-status'
+import { syncService } from '@/services/sync-service'
+import { Save, FileText, Eye, Edit3, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { NoteWithTags } from '@/types'
 
 interface NoteEditorProps {
@@ -18,24 +19,76 @@ interface NoteEditorProps {
 
 export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   const { updateNote, createNote, loading, error } = useNoteStore()
+  const { conflicts } = useSyncStatus()
   const [title, setTitle] = useState(note?.title || '')
   const [content, setContent] = useState(note?.content || '')
   const [isPreview, setIsPreview] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)  // Auto-save functionality
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error' | 'conflict'>('idle')
+  const [syncError, setSyncError] = useState<string | null>(null)
+
+  // Check for conflicts for this note
+  const noteConflict = note ? conflicts.find(c => c.noteId === note.id) : null  // Auto-save functionality with sync
   const saveNote = useCallback(async () => {
     if (note && (title !== note.title || content !== note.content)) {
       setIsSaving(true)
-      const { error } = await updateNote(note.id, { title, content })
-      if (!error) {
-        setLastSaved(new Date())
+      setSyncStatus('syncing')
+      setSyncError(null)
+
+      try {
+        // Use sync service for conflict-aware saving
+        const result = await syncService.saveNote({
+          ...note,
+          title,
+          content,
+          updated_at: new Date().toISOString()
+        })
+
+        if (result.success && result.resolvedNote) {
+          setLastSaved(new Date())
+          setSyncStatus('synced')
+          
+          // Update local store with resolved note
+          await updateNote(note.id, {
+            ...result.resolvedNote,
+            content: result.resolvedNote.content || undefined
+          })
+          
+          // Update local state if server version is different
+          if (result.resolvedNote.title !== title) {
+            setTitle(result.resolvedNote.title)
+          }
+          if (result.resolvedNote.content !== content) {
+            setContent(result.resolvedNote.content || '')
+          }
+        } else if (result.conflict) {
+          setSyncStatus('conflict')
+          setSyncError('Sync conflict detected - please resolve conflicts')
+        } else {
+          setSyncStatus('error')
+          setSyncError(result.error || 'Save failed')
+        }
+      } catch (error) {
+        setSyncStatus('error')
+        setSyncError(error instanceof Error ? error.message : 'Save failed')
+        console.error('Auto-save error:', error)
+      } finally {
+        setIsSaving(false)
       }
-      setIsSaving(false)
     }
   }, [note, title, content, updateNote])
 
-  // Use debounce hook for auto-save
-  useDebounce(saveNote, 2000, [title, content])
+  // Create debounced save function
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (note || isCreatingNew) {
+        saveNote();
+      }
+    }, 2000);
+    
+    return () => clearTimeout(timer);
+  }, [title, content, saveNote]);  // Added saveNote to dependencies
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -43,17 +96,32 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
     }
 
     setIsSaving(true)
+    setSyncStatus('syncing')
+    setSyncError(null)
 
     try {
       if (note) {
-        // Update existing note
-        const { error } = await updateNote(note.id, { title, content })
-        if (!error) {
+        // Update existing note with sync service
+        const result = await syncService.saveNote({
+          ...note,
+          title,
+          content,
+          updated_at: new Date().toISOString()
+        })
+
+        if (result.success && result.resolvedNote) {
           setLastSaved(new Date())
-          onSave?.(note)
+          setSyncStatus('synced')
+          onSave?.(result.resolvedNote)
+        } else if (result.conflict) {
+          setSyncStatus('conflict')
+          setSyncError('Sync conflict detected - please resolve conflicts')
+        } else {
+          setSyncStatus('error')
+          setSyncError(result.error || 'Save failed')
         }
       } else {
-        // Create new note
+        // Create new note (no conflicts possible)
         const path = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
         const { data, error } = await createNote({
           title,
@@ -64,9 +132,17 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
         
         if (!error && data) {
           setLastSaved(new Date())
+          setSyncStatus('synced')
           onSave?.(data)
+        } else {
+          setSyncStatus('error')
+          setSyncError(error || 'Create failed')
         }
       }
+    } catch (error) {
+      setSyncStatus('error')
+      setSyncError(error instanceof Error ? error.message : 'Save failed')
+      console.error('Save error:', error)
     } finally {
       setIsSaving(false)
     }
@@ -115,12 +191,34 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
             {note ? 'Notu Düzenle' : 'Yeni Not'}
           </CardTitle>
           <div className="flex items-center gap-2">
-            {lastSaved && (
-              <span className="text-sm text-muted-foreground">
-                Son kayıt: {lastSaved.toLocaleTimeString('tr-TR')}
-              </span>
+            {/* Sync Status Indicator */}
+            {syncStatus === 'syncing' && (
+              <div className="flex items-center gap-1 text-blue-600">
+                <LoadingSpinner size="sm" />
+                <span className="text-sm">Senkronize ediliyor...</span>
+              </div>
             )}
-            {isSaving && <LoadingSpinner size="sm" />}
+            {syncStatus === 'synced' && lastSaved && (
+              <div className="flex items-center gap-1 text-green-600">
+                <Wifi className="h-4 w-4" />
+                <span className="text-sm">
+                  Kaydedildi: {lastSaved.toLocaleTimeString('tr-TR')}
+                </span>
+              </div>
+            )}
+            {syncStatus === 'error' && (
+              <div className="flex items-center gap-1 text-red-600">
+                <WifiOff className="h-4 w-4" />
+                <span className="text-sm">Hata</span>
+              </div>
+            )}
+            {syncStatus === 'conflict' && (
+              <div className="flex items-center gap-1 text-orange-600">
+                <AlertTriangle className="h-4 w-4" />
+                <span className="text-sm">Çakışma</span>
+              </div>
+            )}
+            
             <Button
               variant="outline"
               size="sm"
@@ -136,9 +234,20 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
           </div>
         </div>
 
-        {error && (
+        {/* Error Display */}
+        {(error || syncError) && (
           <div className="bg-red-50 border border-red-200 rounded-md p-3 text-red-800 text-sm">
-            {error}
+            {syncError || error}
+          </div>
+        )}
+
+        {/* Conflict Warning */}
+        {noteConflict && (
+          <div className="bg-orange-50 border border-orange-200 rounded-md p-3 text-orange-800 text-sm">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Bu not için çakışma tespit edildi. Lütfen çakışmaları çözün.</span>
+            </div>
           </div>
         )}
       </CardHeader>

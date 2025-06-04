@@ -1,0 +1,221 @@
+import { useEffect, useCallback, useRef } from 'react'
+import { useAuthStore } from '@/stores/auth'
+import { useNoteStore } from '@/stores/note'
+import { useSyncStore } from '@/stores/sync'
+import { useDeviceStore } from '@/stores/device'
+import { realtimeService, RealtimeEvent } from '@/services/realtime-service'
+import { syncService } from '@/services/sync-service'
+import { deviceService } from '@/services/device-service'
+
+export const useRealtime = () => {
+  const { user } = useAuthStore()
+  const { fetchNotes, updateNote } = useNoteStore()
+  const { setConnectionStatus, addConflict } = useSyncStore()
+  const { setCurrentDevice, setActiveDevices } = useDeviceStore()
+  
+  const isInitialized = useRef(false)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Handle realtime events
+  const handleRealtimeEvent = useCallback((event: RealtimeEvent) => {
+    console.log('Realtime event:', event)
+
+    switch (event.eventType) {
+      case 'INSERT':
+        if (event.new && !notes.find(note => note.id === event.new.id)) {
+          addNote(event.new)
+        }
+        break
+
+      case 'UPDATE':
+        if (event.new) {
+          // Check for conflicts before applying update
+          const existingNote = notes.find(note => note.id === event.new.id)
+          
+          if (existingNote && existingNote.version && event.new.version) {
+            if (existingNote.version > event.new.version) {
+              // Local version is newer - potential conflict
+              console.log('Potential conflict detected:', {
+                local: existingNote.version,
+                remote: event.new.version
+              })
+              
+              // This shouldn't happen with proper conflict resolution,
+              // but we'll handle it gracefully
+              return
+            }
+          }
+
+          // Convert the event.new to NoteUpdateInput format
+          const updateInput = {
+            ...event.new,
+            content: event.new.content || undefined
+          };
+          
+          updateNote(event.new.id, updateInput)
+        }
+        break
+
+      case 'DELETE':
+        if (event.old) {
+          // Handle deleted note - refresh notes instead
+          fetchNotes()
+        }
+        break
+    }
+  }, [notes, addNote, updateNote, removeNote])
+
+  // Handle connection status changes
+  const handleConnectionChange = useCallback((status: any) => {
+    console.log('Connection status changed:', status)
+    
+    setConnectionStatus({
+      connected: status.connected,
+      error: status.error,
+      lastConnected: status.lastConnected,
+      lastDisconnected: status.lastDisconnected
+    })
+
+    // If disconnected, schedule reconnection attempt
+    if (!status.connected && user) {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        console.log('Attempting to reconnect...')
+        realtimeService.connect(user.id)
+      }, 5000) // Retry after 5 seconds
+    }
+  }, [setConnectionStatus, user])
+
+  // Initialize realtime connection
+  const initializeRealtime = useCallback(async () => {
+    if (!user || isInitialized.current || typeof window === 'undefined') {
+      return
+    }
+
+    console.log('Initializing realtime connection for user:', user.id)
+
+    try {
+      // Set current device info
+      setCurrentDevice(deviceService.getDeviceId(), deviceService.getDeviceName())
+
+      // Connect to realtime
+      setConnectionStatus({ connected: false, connecting: true })
+      
+      const result = await realtimeService.connect(user.id)
+      
+      if (!result.success) {
+        console.error('Failed to connect to realtime:', result.error)
+        setConnectionStatus({ 
+          connected: false, 
+          connecting: false, 
+          error: result.error 
+        })
+        return
+      }
+
+      // Subscribe to realtime events
+      const unsubscribeEvents = realtimeService.subscribe(handleRealtimeEvent)
+      const unsubscribeConnection = realtimeService.onConnectionChange(handleConnectionChange)
+
+      // Load active devices
+      await loadActiveDevices()
+
+      isInitialized.current = true
+
+      // Cleanup function
+      return () => {
+        unsubscribeEvents()
+        unsubscribeConnection()
+        realtimeService.disconnect()
+        isInitialized.current = false
+      }
+    } catch (error) {
+      console.error('Realtime initialization error:', error)
+      setConnectionStatus({ 
+        connected: false, 
+        connecting: false, 
+        error: error instanceof Error ? error.message : 'Initialization failed' 
+      })
+    }
+  }, [user, setCurrentDevice, setConnectionStatus, handleRealtimeEvent, handleConnectionChange])
+
+  // Load active devices
+  const loadActiveDevices = useCallback(async () => {
+    if (!user) return
+
+    try {
+      const result = await deviceService.getActiveDevices(user.id)
+      
+      if (result.data) {
+        setActiveDevices(result.data)
+      } else if (result.error) {
+        console.error('Failed to load active devices:', result.error)
+      }
+    } catch (error) {
+      console.error('Error loading active devices:', error)
+    }
+  }, [user, setActiveDevices])
+
+  // Disconnect realtime
+  const disconnect = useCallback(async () => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
+
+    await realtimeService.disconnect()
+    isInitialized.current = false
+    
+    setConnectionStatus({ connected: false, connecting: false })
+  }, [setConnectionStatus])
+
+  // Force reconnect
+  const reconnect = useCallback(async () => {
+    if (user) {
+      await disconnect()
+      await initializeRealtime()
+    }
+  }, [user, disconnect, initializeRealtime])
+
+  // Broadcast custom event to other devices
+  const broadcast = useCallback(async (event: string, payload: any) => {
+    return realtimeService.broadcast(event, payload)
+  }, [])
+
+  // Get connection status
+  const getConnectionStatus = useCallback(() => {
+    return realtimeService.getConnectionStatus()
+  }, [])
+
+  // Initialize on mount when user is available
+  useEffect(() => {
+    if (user && !isInitialized.current) {
+      initializeRealtime()
+    }
+
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+      }
+    }
+  }, [user, initializeRealtime])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      disconnect()
+    }
+  }, [disconnect])
+
+  return {
+    isConnected: realtimeService.isOnline(),
+    disconnect,
+    reconnect,
+    broadcast,
+    getConnectionStatus,
+    loadActiveDevices
+  }
+}
