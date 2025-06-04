@@ -19,7 +19,7 @@ interface AuthStore extends AuthState {
 
 export const useAuthStore = create<AuthStore>()(
   devtools(
-    (set, get) => ({
+    (set) => ({
       // Initial state
       user: null,
       session: null,
@@ -72,9 +72,8 @@ export const useAuthStore = create<AuthStore>()(
           set({ error: errorMsg, loading: false })
           return { error: errorMsg }
         }
-        
-        try {
-          const { data, error } = await supabase.auth.signUp({
+          try {
+          const { error } = await supabase.auth.signUp({
             email,
             password,
           })

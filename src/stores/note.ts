@@ -55,12 +55,10 @@ export const useNoteStore = create<NoteStore>()(
           if (error) {
             set({ error: error.message, loading: false })
             return
-          }
-
-          // Transform the data to include tags properly
+          }          // Transform the data to include tags properly
           const transformedNotes = data.map(note => ({
             ...note,
-            tags: note.tags?.map((nt: any) => nt.tag) || []
+            tags: note.tags?.map((nt: { tag: unknown }) => nt.tag) || []
           }))
 
           set({ notes: transformedNotes, loading: false })

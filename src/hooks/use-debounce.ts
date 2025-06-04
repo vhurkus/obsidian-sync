@@ -12,7 +12,6 @@ export function useDebounce(
   deps: React.DependencyList
 ) {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
-
   useEffect(() => {
     // Clear existing timeout
     if (timeoutRef.current) {
@@ -28,7 +27,8 @@ export function useDebounce(
         clearTimeout(timeoutRef.current)
       }
     }
-  }, deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [callback, delay, ...deps])
 
   // Cleanup on unmount
   useEffect(() => {

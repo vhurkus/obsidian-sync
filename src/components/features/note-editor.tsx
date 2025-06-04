@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { LoadingSpinner } from '@/components/ui/loading-spinner'
 import { useNoteStore } from '@/stores/note'
-import { debounce } from '@/lib/utils'
+import { useDebounce } from '@/hooks/use-debounce'
 import { Save, FileText, Eye, Edit3 } from 'lucide-react'
 import { NoteWithTags } from '@/types'
 
@@ -22,29 +22,20 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   const [content, setContent] = useState(note?.content || '')
   const [isPreview, setIsPreview] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-  const [lastSaved, setLastSaved] = useState<Date | null>(null)
-
-  // Auto-save functionality
-  const debouncedSave = useCallback(
-    debounce(async (title: string, content: string) => {
-      if (note && (title !== note.title || content !== note.content)) {
-        setIsSaving(true)
-        const { error } = await updateNote(note.id, { title, content })
-        if (!error) {
-          setLastSaved(new Date())
-        }
-        setIsSaving(false)
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)  // Auto-save functionality
+  const saveNote = useCallback(async () => {
+    if (note && (title !== note.title || content !== note.content)) {
+      setIsSaving(true)
+      const { error } = await updateNote(note.id, { title, content })
+      if (!error) {
+        setLastSaved(new Date())
       }
-    }, 2000),
-    [note, updateNote]
-  )
-
-  // Trigger auto-save when content changes
-  useEffect(() => {
-    if (note && (title || content)) {
-      debouncedSave(title, content)
+      setIsSaving(false)
     }
-  }, [title, content, debouncedSave, note])
+  }, [note, title, content, updateNote])
+
+  // Use debounce hook for auto-save
+  useDebounce(saveNote, 2000, [title, content])
 
   const handleSave = async () => {
     if (!title.trim()) {

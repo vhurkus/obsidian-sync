@@ -250,9 +250,8 @@ export default function DashboardPage() {
               <div className="text-center space-y-4 max-w-md">
                 <div className="p-6 bg-slate-100 dark:bg-slate-800 rounded-full w-24 h-24 mx-auto flex items-center justify-center">
                   <FileText className="h-12 w-12 text-slate-400" />
-                </div>
-                <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
-                  ObsidianSync'e Hoş Geldiniz
+                </div>                <h2 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+                  ObsidianSync&apos;e Hoş Geldiniz
                 </h2>
                 <p className="text-slate-600 dark:text-slate-400">
                   Sol taraftaki listeden bir not seçin veya yeni bir not oluşturmaya başlayın.

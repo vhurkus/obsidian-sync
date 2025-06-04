@@ -131,7 +131,7 @@ export function NotesList({ onNoteSelect, onNewNote, selectedNoteId }: NotesList
               <div className="space-y-2">
                 <FileText className="h-12 w-12 mx-auto opacity-50" />
                 <p className="text-lg font-medium">Henüz not yok</p>
-                <p className="text-sm">İlk notunuzu oluşturmak için "Yeni Not" butonuna tıklayın</p>
+                <p className="text-sm">İlk notunuzu oluşturmak için &quot;Yeni Not&quot; butonuna tıklayın</p>
               </div>
             ) : (
               <div className="space-y-2">
