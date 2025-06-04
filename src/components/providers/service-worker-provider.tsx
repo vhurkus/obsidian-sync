@@ -6,6 +6,17 @@
 import { useEffect } from 'react';
 import { useOfflineStore } from '@/stores/offline';
 
+// Define interfaces for the Background Sync API that are missing in standard TypeScript definitions
+interface SyncManager {
+  register(tag: string): Promise<void>;
+}
+
+// Extended ServiceWorkerRegistration with missing properties
+interface ExtendedServiceWorkerRegistration extends ServiceWorkerRegistration {
+  sync?: SyncManager;
+  ready?: Promise<ServiceWorkerRegistration>;
+}
+
 export function ServiceWorkerProvider({ children }: { children: React.ReactNode }) {
   const initializeOfflineSupport = useOfflineStore(state => state.initializeOfflineSupport);
   const setBackgroundSyncSupported = useOfflineStore(state => state.setBackgroundSyncSupported);
@@ -65,11 +76,11 @@ export function ServiceWorkerProvider({ children }: { children: React.ReactNode 
       }
 
       // Register for background sync
-      await registration.ready;
+      await (registration as ExtendedServiceWorkerRegistration).ready;
       
       // Try to register background sync
       try {
-        await registration.sync.register('note-sync');
+        await (registration as ExtendedServiceWorkerRegistration).sync?.register('note-sync');
         console.log('[SW] Background sync registered');
       } catch (error) {
         console.log('[SW] Background sync registration failed:', error);
@@ -108,10 +119,10 @@ export function useServiceWorker() {
 
   const triggerBackgroundSync = async (tag: string = 'note-sync') => {
     if ('serviceWorker' in navigator) {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await navigator.serviceWorker.ready as ExtendedServiceWorkerRegistration;
       if ('sync' in registration) {
         try {
-          await registration.sync.register(tag);
+          await registration.sync?.register(tag);
           console.log('[SW] Background sync triggered:', tag);
           return true;
         } catch (error) {
